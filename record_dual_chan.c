@@ -28,12 +28,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //#define CAMERA_USB_MIC_DEVICE "sysdefault:CARD=Camera%d"
 #define MIC_DEVICE "plughw:%d,0"
 
-#define MICS 1
-#define SECONDS 0.5
-#define RATE 16000
-#define SAMPLES ((int)(RATE*SECONDS)) 
-char ** fns;
+#define SECONDS 0.1
+#define RATE 44100
+#define SAMPLES 4096 // ((int)(RATE*SECONDS)) 
 
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t lock_fftw = PTHREAD_MUTEX_INITIALIZER;
 
 /********************************************************/
 /*---------------------------------------------------------------------
@@ -58,37 +58,29 @@ IV. Author
 David E. Narváez
 dMaggot
 david.narvaez@computer.org*/
-void xcorr(fftw_complex * signala, fftw_complex * signalb, fftw_complex * result, int N)
-{
-    fftw_complex * signala_ext = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (2 * N - 1));
-    fftw_complex * signalb_ext = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (2 * N - 1));
-    fftw_complex * out_shifted = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (2 * N - 1));
-    fftw_complex * outa = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (2 * N - 1));
-    fftw_complex * outb = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (2 * N - 1));
-    fftw_complex * out = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (2 * N - 1));
+fftw_complex * signala_ext;
+fftw_complex * signalb_ext;
+fftw_complex * out_shifted;
+fftw_complex * outa; 
+fftw_complex * outb; 
+fftw_complex * out;
 
-    fftw_plan pa = fftw_plan_dft_1d(2 * N - 1, signala_ext, outa, FFTW_FORWARD, FFTW_ESTIMATE);
-    fftw_plan pb = fftw_plan_dft_1d(2 * N - 1, signalb_ext, outb, FFTW_FORWARD, FFTW_ESTIMATE);
-    fftw_plan px = fftw_plan_dft_1d(2 * N - 1, out, result, FFTW_BACKWARD, FFTW_ESTIMATE);
+fftw_plan pa;
+fftw_plan pb;
 
-    //zeropadding
-    memset (signala_ext, 0, sizeof(fftw_complex) * (N - 1));
-    memcpy (signala_ext + (N - 1), signala, sizeof(fftw_complex) * N);
-    memcpy (signalb_ext, signalb, sizeof(fftw_complex) * N);
-    memset (signalb_ext + N, 0, sizeof(fftw_complex) * (N - 1));
-
-    fftw_execute(pa);
-    fftw_execute(pb);
-
-    fftw_complex scale = 1.0/(2 * N -1);
-    for (int i = 0; i < 2 * N - 1; i++)
-        out[i] = outa[i] * conj(outb[i]) * scale;
-
-    fftw_execute(px);
-
+void init_xcorr() {
+    signala_ext = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (2 * SAMPLES - 1));
+    signalb_ext = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (2 * SAMPLES - 1));
+    out_shifted = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (2 * SAMPLES - 1));
+    outa = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (2 * SAMPLES - 1));
+    outb = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (2 * SAMPLES - 1));
+    out = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (2 * SAMPLES - 1));
+    pa = fftw_plan_dft_1d(2 * SAMPLES - 1, signala_ext, outa, FFTW_FORWARD, FFTW_ESTIMATE);
+    pb = fftw_plan_dft_1d(2 * SAMPLES - 1, signalb_ext, outb, FFTW_FORWARD, FFTW_ESTIMATE);
+}
+void close_xcorr() {
     fftw_destroy_plan(pa);
     fftw_destroy_plan(pb);
-    fftw_destroy_plan(px);
 
     fftw_free(signala_ext);
     fftw_free(signalb_ext);
@@ -98,6 +90,29 @@ void xcorr(fftw_complex * signala, fftw_complex * signalb, fftw_complex * result
     fftw_free(outb);
 
     fftw_cleanup();
+}
+void xcorr(fftw_complex * signala, fftw_complex * signalb, fftw_complex * result)
+{
+    pthread_mutex_lock(&lock_fftw);
+    fftw_plan px = fftw_plan_dft_1d(2 * SAMPLES - 1, out, result, FFTW_BACKWARD, FFTW_ESTIMATE);
+
+    //zeropadding
+    memset (signala_ext, 0, sizeof(fftw_complex) * (SAMPLES - 1));
+    memcpy (signala_ext + (SAMPLES - 1), signala, sizeof(fftw_complex) * SAMPLES);
+    memcpy (signalb_ext, signalb, sizeof(fftw_complex) * SAMPLES);
+    memset (signalb_ext + SAMPLES, 0, sizeof(fftw_complex) * (SAMPLES - 1));
+
+    fftw_execute(pa);
+    fftw_execute(pb);
+
+    fftw_complex scale = 1.0/(2 * SAMPLES -1);
+    for (int i = 0; i < 2 * SAMPLES - 1; i++)
+        out[i] = outa[i] * conj(outb[i]) * scale;
+
+    fftw_execute(px);
+    fftw_destroy_plan(px);
+
+    pthread_mutex_unlock(&lock_fftw);
 
     return;
 }
@@ -172,11 +187,8 @@ void ShortToReal(signed short* shrt,double* real,int siz) {
 
 
 
-signed short *buffer[MICS];
-fftw_complex * buffer_complex[MICS];
-fftw_complex * buffer_complex_result;;
-snd_pcm_t *capture_handles[MICS];
-snd_pcm_hw_params_t *hw_paramss[MICS];
+snd_pcm_t *capture_handle;
+snd_pcm_hw_params_t *hw_params;
 snd_pcm_format_t format = SND_PCM_FORMAT_S16_LE;
 
 void init_audio(snd_pcm_t ** capture_handle, snd_pcm_hw_params_t ** hw_params , char * s) {
@@ -208,7 +220,7 @@ void init_audio(snd_pcm_t ** capture_handle, snd_pcm_hw_params_t ** hw_params , 
  
   //fprintf(stdout, "hw_params initialized\n");
 	
-  if ((err = snd_pcm_hw_params_set_access (*capture_handle, *hw_params, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0) {
+  if ((err = snd_pcm_hw_params_set_access (*capture_handle, *hw_params, SND_PCM_ACCESS_RW_NONINTERLEAVED)) < 0) {
     fprintf (stderr, "cannot set access type (%s)\n",
              snd_strerror (err));
     exit (1);
@@ -264,106 +276,65 @@ void init_audio(snd_pcm_t ** capture_handle, snd_pcm_hw_params_t ** hw_params , 
 }
 
 void *thread_capture(void *threadarg) {
+
+  //lock the audio system
+  signed short *buffer1 =  malloc(SAMPLES * snd_pcm_format_width(format) / 8 );
+  signed short *buffer2 =  malloc(SAMPLES * snd_pcm_format_width(format) / 8 );
+  fftw_complex * buffer_complex =  (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (SAMPLES*2));
+  fftw_complex * buffer_complex_result = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (SAMPLES)*2);
   int *th_id = (int*)threadarg;
-  //fprintf(stderr,"THREAD %d %d\n",*th_id,SAMPLES); 
-  int err;
-    if ((err = snd_pcm_readi (capture_handles[*th_id], buffer[*th_id], SAMPLES)) != SAMPLES) {
-      fprintf (stderr, "read from audio interface failed (%s)\n",
-               snd_strerror (err));
-     exit (1);
-  }
-  //fprintf(stderr,"captured %d points\n",err);
-
- //now write the file
- /*
-  struct WaveHeader *hdr;
-  hdr = genericWAVHeader(RATE, 16, 2);
-  uint32_t pcm_data_size = hdr->bytes_per_frame * err;
-  hdr->file_size = pcm_data_size + 44 - 8;
-  int filedesc = open(fns[*th_id], O_WRONLY | O_CREAT, 0644);
-  fprintf(stderr,"WRITTING TO %s\n",fns[*th_id]);
-  err = writeWAVHeader(filedesc, hdr);
-    if (err) {
-		fprintf(stderr,"Failed to write header\n");
-		exit(1);
+  signed short *buffers[] = {buffer1,buffer2};
+ 
+  while (1) { 
+    pthread_mutex_lock(&lock);
+    //fprintf(stderr,"THREAD %d %d\n",*th_id,SAMPLES); 
+    //memset(buffer,0,SAMPLES * snd_pcm_format_width(format) / 8 * 2);
+    int err;
+      if ((err = snd_pcm_readn (capture_handle, buffers, SAMPLES)) != SAMPLES) {
+        fprintf (stderr, "read from audio interface failed (%s)\n",
+                 snd_strerror (err));
+       exit (1);
     }
-
-  write(filedesc, buffer[*th_id], pcm_data_size);*/
-  //now copy over to complex buffer
-  //compute mean and stddev
-  double mean[]={0,0};
-  for (int i=0; i<SAMPLES; i++) {
-    mean[0]+=buffer[*th_id][2*i];
-    mean[1]+=buffer[*th_id][2*i+1];
-  }
-  mean[0]/=SAMPLES;
-  mean[1]/=SAMPLES;
-  //now stddev
-  double var[]={0,0};
-  for (int i=0; i<SAMPLES; i++) {
-    var[0]+=pow(buffer[*th_id][2*i]-mean[0],2);
-    var[1]+=pow(buffer[*th_id][2*i+1]-mean[1],2);
-  }
-  var[0]/=SAMPLES;
-  var[1]/=SAMPLES;
-  double stddev[]={sqrt(var[0]),sqrt(var[1])};
-  //fprintf(stderr,"MEAN %e STDDEV %e\n",mean,stddev);
-  for (int i=0; i<SAMPLES; i++) {
-    buffer_complex[*th_id][i]=(buffer[*th_id][2*i]-mean[0])/stddev[0];
-    buffer_complex[*th_id][i+SAMPLES]=(buffer[*th_id][2*i+1]-mean[1])/stddev[1];
-  }
-  /*for (int i=0; i<SAMPLES; i++) {
-    buffer_complex[*th_id][i]=buffer[*th_id][i];
-  }*/
-
-  //for (int i=0; i<SAMPLES; i++ ){ 
-  //  fprintf(stdout,"%lf %lf\n",creal(buffer_complex[*th_id][i]),creal(buffer_complex[*th_id][i+SAMPLES]));
-  //} 
-  return NULL;
-}
-
-int main (int argc, char *argv[]) {
-	
-  if (argc!=1+(MICS) ) {
-	fprintf(stderr,"%s filename\n",argv[0]);
-	exit(1);
-  }
-  assert(SAMPLES%2==0);
-
-
-  fns = argv+1;
-
-  for (int i=0; i<MICS; i++) {
-    char b[1024];
-    sprintf(b,MIC_DEVICE,i);
-    fprintf(stderr,"Setting %d\n",i);
-    init_audio(capture_handles+i,hw_paramss+i,b);
-    buffer[i] = malloc(SAMPLES * snd_pcm_format_width(format) / 8 * 2);
-    buffer_complex[i] = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (SAMPLES));
-    assert(buffer_complex[i]!=NULL);
-  }
-  buffer_complex_result = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * (SAMPLES)*2);
-  assert(buffer_complex_result!=NULL);
-  for (int j=0; j<100; j++) {
-    pthread_t threads[2];
-    int th_ids[] = {0,1};
-    for (int i=0; i<MICS; i++) {
-      pthread_create(threads+i,NULL,thread_capture,th_ids+i);
+    pthread_mutex_unlock(&lock);
+    //now copy over to complex buffer
+    //compute mean and stddev
+    for (int c=0; c<2; c++) {
+      double mean=0,var=0, stddev=0;
+      signed short *c_buffer=buffers[c];
+      for (int i=0; i<SAMPLES; i++) {
+        mean+=c_buffer[i];
+      }
+      mean/=SAMPLES;
+      for (int i=0; i<SAMPLES; i++) {
+        c_buffer[i]-=mean;
+      }
+      for (int i=0; i<SAMPLES; i++) {
+        var+=pow(c_buffer[i],2);
+      }
+      var/=SAMPLES;
+      //fprintf(stderr,"MEAN %e STDDEV %e\n",mean,stddev);
+      stddev=sqrt(var);
+      for (int i=0; i<SAMPLES; i++) {
+        buffer_complex[i+c*SAMPLES]=c_buffer[i]/stddev;
+      }
     }
+    /*for (int i=0; i<SAMPLES; i++) {
+      buffer_complex[*th_id][i]=buffer[*th_id][i];
+    }*/
   
-  	/* Create worker thread */
-    for (int i=0; i<MICS; i++) {
-      pthread_join(threads[i], NULL );
-    }
-    //xcorr(buffer_complex[0], buffer_complex[1], buffer_complex_result, SAMPLES);
-    xcorr(buffer_complex[0], buffer_complex[0]+SAMPLES, buffer_complex_result, SAMPLES);
+    //for (int i=0; i<SAMPLES; i++ ){ 
+    //  fprintf(stdout,"%lf %lf\n",creal(buffer_complex[*th_id][i]),creal(buffer_complex[*th_id][i+SAMPLES]));
+    //} 
+    xcorr(buffer_complex, buffer_complex+SAMPLES, buffer_complex_result);
     double c = 340;
     double maxd = 1.5;
     int peaks = (int)((maxd/c)*RATE*2);
-    
+    if (peaks>(SAMPLES/4)) {
+      peaks=SAMPLES/4;
+    }
     double w=0.0;
     double s=0.0;
-    int maxes=5;
+    int maxes=3;
     for (int k=0; k<maxes; k++) {
       double max=0;
       int maxi=0;
@@ -384,9 +355,31 @@ int main (int argc, char *argv[]) {
     double lag = (w/s-(double)SAMPLES)/RATE;
     fprintf(stderr,"%e %e %e\n",w/s, lag, lag*c);
   }
-  for (int i=0; i<MICS; i++) {
-    snd_pcm_close (capture_handles[i]); 
-  }
+  return NULL;
+}
+
+int main (int argc, char *argv[]) {
+	
+
+
+
+  char b[1024];
+  sprintf(b,MIC_DEVICE,0);
+  init_xcorr();
+  fprintf(stderr,"Setting %d\n",0);
+  init_audio(&capture_handle,&hw_params,b);
+    int th_ids[] = {0,1};
+
+    pthread_t threads[2];
+    for (int i=0; i<2; i++) {
+      pthread_create(threads+i,NULL,thread_capture,th_ids+i);
+    }
+  
+    for (int i=0; i<2; i++) {
+      pthread_join(threads[i], NULL );
+    }
+  close_xcorr();
+  snd_pcm_close (capture_handle); 
 
 
   return 0; 
