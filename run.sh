@@ -1,3 +1,3 @@
-wget -O opencv-2.4.10.zip http://sourceforge.net/projects/opencvlibrary/files/opencv-unix/2.4.10/opencv-2.4.10.zip/download
-unzip opencv-2.4.10.zip
-cd opencv-2.4.10
+fs=44100
+arecord -D 'sysdefault:CARD=Camera_1' -d 3 /dev/shm/out_${1}_1.wav -r $fs &
+arecord -D 'sysdefault:CARD=Camera' -d 3 /dev/shm/out_${1}_0.wav -r $fs &
