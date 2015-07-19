@@ -5,15 +5,14 @@
 
  #include <iostream>
  #include <stdio.h>
+
+
+#ifdef RPI
 #include <wiringPi.h>
 #include <wiringPiSPI.h>
-
-
 #define M1PIN	16
 #define M2PIN	20
 #define ENPIN	19
-
-
 void move(int x, int d) {
 	digitalWrite(ENPIN,0);	 //disable
 	digitalWrite(M1PIN,x);
@@ -22,6 +21,7 @@ void move(int x, int d) {
 	delay(d);
 	digitalWrite(ENPIN,0);	 //disable
 }
+#endif
 
  using namespace std;
  using namespace cv;
@@ -59,6 +59,10 @@ Point RotateBackPoint(const Point& dstPoint, const Mat& invertMat)
  /** @function main */
  int main( int argc, const char** argv )
  {
+   if (argc!=5) {
+	fprintf(stderr,"Width height cascadename cascadename\n");
+	exit(1);
+   }
    width = atoi(argv[1]);
    height = atoi(argv[2]);
    /** Global variables */
@@ -91,13 +95,14 @@ if (!capture) {
 	exit(1);
 }
 
-
+#ifdef RPI
         wiringPiSetupGpio();
         //lets setup enable pin
         pinMode(M1PIN,OUTPUT);
         pinMode(M2PIN,OUTPUT);
         pinMode(ENPIN,OUTPUT);
         digitalWrite(ENPIN,0); //Turn the motor off
+#endif
 
 /*omp_lock_t frame_lock[2];
 omp_lock_t capture_lock[2];
@@ -165,7 +170,7 @@ void detectAndDisplay( Mat &frame , Mat &frame_gray) {
 
   float avg_x=0,n_x=0; 
  
-  if (i++%10!=0) {
+  if (0==1 || i++%10!=0) {
 	  //-- Detect faces
 	  //face_cascade.detectMultiScale( frame_gray, faces, 1.3, 2, 0|CV_HAAR_SCALE_IMAGE|CV_HAAR_FIND_BIGGEST_OBJECT|CV_HAAR_DO_ROUGH_SEARCH|CV_HAAR_DO_CANNY_PRUNING, Size(30, 30) );
 	  float c = 1.0;
@@ -211,11 +216,12 @@ void detectAndDisplay( Mat &frame , Mat &frame_gray) {
 	  //profile_cascade.detectMultiScale( frame_gray, faces, 1.2, 2, 0|CV_HAAR_SCALE_IMAGE|CV_HAAR_FIND_BIGGEST_OBJECT|CV_HAAR_DO_ROUGH_SEARCH|CV_HAAR_DO_CANNY_PRUNING, Size(30, 30) );
 
 	  bool flipped=false;
-  	  if (j++%2==0) {
+  	  /*if (j++%2==0) {
 		flip(frame_gray,frame_gray,1);
  		flipped=true;
-          }
+          }*/
 	  profile_cascade.detectMultiScale( frame_gray, faces, 1.3, 2, 0|CV_HAAR_SCALE_IMAGE|CV_HAAR_FIND_BIGGEST_OBJECT|CV_HAAR_DO_ROUGH_SEARCH|CV_HAAR_DO_CANNY_PRUNING, Size(30, 30) );
+	  //profile_cascade.detectMultiScale( frame_gray, faces, 1.1, 2, 0|CV_HAAR_SCALE_IMAGE|CV_HAAR_FIND_BIGGEST_OBJECT|CV_HAAR_DO_ROUGH_SEARCH|CV_HAAR_DO_CANNY_PRUNING, Size(30, 30) );
 	  
 	  //profile_cascade.detectMultiScale( frame_gray, faces, 1.1, 2, 0, Size(30, 30) );
 	  //face_cascade.detectMultiScale( frame_gray, faces, 2, 2, 0, Size(30, 30) );
@@ -234,6 +240,7 @@ void detectAndDisplay( Mat &frame , Mat &frame_gray) {
   if (n_x>0) {
 	  avg_x/=n_x;
 	 fprintf(stderr,"%f %d %f\n",avg_x, height,abs(avg_x-(height/2)));
+#ifdef RPI
 	  if (avg_x>0 && abs(avg_x-(height/2))>30) {
 		if (avg_x>height/2) {
 			move(0,50);
@@ -241,6 +248,7 @@ void detectAndDisplay( Mat &frame , Mat &frame_gray) {
 			move(1,50);
 		}
 	  }
+#endif
   }
   //-- Show what you got
   //imshow( window_name, frame );
