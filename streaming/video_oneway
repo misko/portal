@@ -21,3 +21,11 @@ gst-launch-0.10 -vv videotestsrc  ! cedar_h264enc profile_idc=66 level_idc=11  !
 #fast
 DISPLAY=:0 gst-launch-0.10 -vvvv udpsrc port=9090 ! application/x-rtp, clock-rate=90000, payload=96 ! rtph264depay  !  video/x-h264,framerate=30/1 ! queue ! vdpauh264dec ! vdpauvideopostprocess ! vdpausink sync=false
 DISPLAY=:0 gst-launch-0.10 -vvvv udpsrc port=9090 ! application/x-rtp, clock-rate=90000, payload=96 ! rtph264depay  !  video/x-h264,framerate=30/1 ! queue ! vdpauh264dec ! xvimagesink  sync=false
+
+
+
+#### VIDEO AND AUDIO ####
+
+#audio tst and video tst
+ gst-launch-0.10  videotestsrc  ! cedar_h264enc profile_idc=66 level_idc=11  ! rtph264pay pt=96 config-interval=1 ! udpsink host=10.0.0.101 port=9090 audiotestsrc ! mulawenc ! rtppcmupay ! udpsink host=10.0.0.101 port=9091
+DISPLAY=:0 gst-launch-0.10 -vvvv udpsrc port=9090 ! application/x-rtp, clock-rate=90000, payload=96 ! rtph264depay  !  video/x-h264,framerate=30/1 ! queue ! vdpauh264dec ! xvimagesink  sync=false udpsrc port=9091 caps="application/x-rtp" ! queue ! rtppcmudepay ! mulawdec ! audioconvert ! alsasink
