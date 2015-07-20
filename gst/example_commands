@@ -1,0 +1,3 @@
+DISPLAY=:0 gst-launch-0.10 v4l2src -vv ! video/x-raw-yuv,width=640,height=480,framerate=30/1  ! tee name=t ! xvimagesink sync=false t. ! queue leaky=2 ! videoscale  ! ffmpegcolorspace ! facedetect ! fakesink sync=false
+
+DISPLAY=:0 gst-launch-0.10 v4l2src -vv ! video/x-raw-yuv,width=640,height=480,framerate=30/1  ! tee name=t ! xvimagesink sync=false t. ! queue leaky=2 ! videoscale  ! ffmpegcolorspace ! facedetect ! fakesink sync=false
