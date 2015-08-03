@@ -35,3 +35,8 @@ DISPLAY=:0 gst-launch-0.10 -vvvv udpsrc port=9090 ! application/x-rtp, clock-rat
 #working smooth - make sure to kill any ffmpeg on olimex....
 DISPLAY=:0 gst-launch-0.10 -vvvv udpsrc port=9090 ! application/x-rtp, clock-rate=90000, payload=96 ! rtph264depay  !  video/x-h264,framerate=30/1 ! queue ! vdpauh264dec ! xvimagesink  sync=false
 gst-launch-0.10  v4l2src  ! ffmpegcolorspace ! cedar_h264enc profile_idc=66 level_idc=11  ! rtph264pay pt=96 config-interval=1 ! udpsink host=10.0.0.101 port=9090
+
+
+### some more workign stuff
+DISPLAY=:0 gst-launch-0.10 -vvvv udpsrc port=9090 ! application/x-rtp, clock-rate=90000, payload=96 ! rtph264depay  !  video/x-h264,framerate=30/1 ! queue ! vdpauh264dec ! vdpauvideopostprocess ! vdpausink sync=false
+gst-launch-0.10  v4l2src -vv device=/dev/video1 ! ffmpegcolorspace ! video/x-raw-yuv,width=640,height=480,framerate=30/1 ! cedar_h264enc profile_idc=66 level_idc=11  ! rtph264pay pt=96 config-interval=1 ! udpsink host=10.0.0.101 port=9090
